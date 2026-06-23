@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>USPS Address CSV Formatter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container glass">
+    <h1>USPS Address CSV Formatter</h1>
+    <p>Upload a CSV of raw addresses, provide your Google AI Studio API key, and get a cleaned CSV.</p>
+    <div class="field">
+      <label for="apiKey">Google AI Studio API Key</label>
+      <input type="password" id="apiKey" placeholder="Enter your API key" />
+    </div>
+    <div class="field">
+      <label for="csvFile">Select CSV file</label>
+      <input type="file" id="csvFile" accept=".csv" />
+    </div>
+    <button id="processBtn">Process CSV</button>
+    <div id="status" class="status"></div>
+    <div class="progress-wrapper" hidden>
+      <progress id="progressBar" value="0" max="100"></progress>
+      <span id="progressText"></span>
+    </div>
+    <a id="downloadLink" href="#" download="cleaned_addresses.csv" hidden>Download Cleaned CSV</a>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" integrity="sha512-L2N9Vj6qG5UQ6Y4K0t8E+KXx+0aE5Yzq+gQ5zX5X6K5B6pVn0wL5d1p9uO6Qj9C6G0lKZ6jzLx+Z0F5b8T3Q==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js" integrity="sha512-5f4F+e6R8b+J3+E5+J6K5P+0b6E2h9J+V0L0m5n3u7f9g2Y6b5h1v2T9l0+3R4q+X9K9c+6eR8fM+6bUe6t8Q==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="script.js"></script>
+</body>
+</html>
