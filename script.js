@@ -35,6 +35,8 @@ const progressBar = document.getElementById("progressBar");
 const progressText = document.getElementById("progressText");
 const progressWrapper = document.querySelector(".progress-wrapper");
 const downloadLink = document.getElementById("downloadLink");
+const dropZone = document.getElementById("dropZone");
+const togglePasswordBtn = document.getElementById("togglePasswordBtn");
 
 // --- Helper Functions ------------------------------------------------------
 function setStatus(message) {
@@ -183,6 +185,67 @@ processBtn.addEventListener("click", async () => {
   });
 });
 
+// --- Modern UI Interaction & Drag-and-Drop ---------------------------------
+function handleFileSelect(file) {
+  const textEl = dropZone.querySelector(".drop-zone-text");
+  if (file) {
+    textEl.innerHTML = `Selected: <strong>${file.name}</strong> (${(file.size / 1024).toFixed(1)} KB)`;
+  } else {
+    textEl.innerHTML = `Drag & drop your CSV here or <strong>browse</strong>`;
+  }
+}
+
+fileInput.addEventListener("change", () => {
+  if (fileInput.files.length > 0) {
+    handleFileSelect(fileInput.files[0]);
+  } else {
+    handleFileSelect(null);
+  }
+});
+
+// Drag & drop highlight classes
+["dragenter", "dragover"].forEach(eventName => {
+  dropZone.addEventListener(eventName, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.add("drag-over");
+  }, false);
+});
+
+["dragleave", "drop"].forEach(eventName => {
+  dropZone.addEventListener(eventName, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.remove("drag-over");
+  }, false);
+});
+
+// Drop handler
+dropZone.addEventListener("drop", (e) => {
+  const dt = e.dataTransfer;
+  const files = dt.files;
+  if (files.length > 0) {
+    fileInput.files = files;
+    handleFileSelect(files[0]);
+  }
+}, false);
+
+// Password visibility toggle
+togglePasswordBtn.addEventListener("click", () => {
+  const isPassword = apiKeyInput.type === "password";
+  apiKeyInput.type = isPassword ? "text" : "password";
+  
+  const eyeOpen = togglePasswordBtn.querySelector(".eye-open");
+  const eyeClosed = togglePasswordBtn.querySelector(".eye-closed");
+  
+  if (isPassword) {
+    eyeOpen.style.display = "none";
+    eyeClosed.style.display = "block";
+  } else {
+    eyeOpen.style.display = "block";
+    eyeClosed.style.display = "none";
+  }
+});
 
 // --------------------------------------------------------------------------
 // End of script.js
