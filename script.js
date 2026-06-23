@@ -4,7 +4,7 @@
 // Google AI Studio (Gemini‑2.5‑Flash) endpoint
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
-const SYSTEM_PROMPT = `You are an expert postal address cleaning and formatting assistant. Your task is to clean and standardize US mailing addresses to USPS standards.
+const DEFAULT_SYSTEM_PROMPT = `You are an expert postal address cleaning and formatting assistant. Your task is to clean and standardize US mailing addresses to USPS standards.
 
 Input: A single raw address string containing elements of name, street, city, state, zip.
 
@@ -26,6 +26,8 @@ Output: A JSON object with the following fields:
 Guidelines for address parts:
 - Do not output markdown or extra fields. Match the schema exactly.`;
 
+let SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT;
+
 // --- UI Elements ----------------------------------------------------------
 const apiKeyInput = document.getElementById("apiKey");
 const fileInput = document.getElementById("csvFile");
@@ -37,6 +39,12 @@ const progressWrapper = document.querySelector(".progress-wrapper");
 const downloadLink = document.getElementById("downloadLink");
 const dropZone = document.getElementById("dropZone");
 const togglePasswordBtn = document.getElementById("togglePasswordBtn");
+const viewPromptBtn = document.getElementById("viewPromptBtn");
+const promptModal = document.getElementById("promptModal");
+const promptText = document.getElementById("promptText");
+const closePromptBtn = document.getElementById("closePromptBtn");
+const savePromptBtn = document.getElementById("savePromptBtn");
+const resetPromptBtn = document.getElementById("resetPromptBtn");
 
 // --- Helper Functions ------------------------------------------------------
 function setStatus(message) {
@@ -104,7 +112,7 @@ function buildCSV(rows) {
       r.notes || ""
     ];
     // Escape double quotes and wrap each column in quotes
-    const escaped = cols.map(c => `"${c.replace(/"/g, '""')}"`);
+    const escaped = cols.map(c => `"${String(c).replace(/"/g, '""')}"`);
     return escaped.join(",");
   });
   return [header, ...lines].join("\n");
@@ -124,6 +132,10 @@ processBtn.addEventListener("click", async () => {
   }
   if (!apiKeyInput.value.trim()) {
     setStatus("Please enter your Google AI Studio API key.");
+    return;
+  }
+  if (!window.Papa) {
+    setStatus("CSV parser failed to load. Please check your connection and refresh.");
     return;
   }
 
@@ -189,7 +201,7 @@ processBtn.addEventListener("click", async () => {
 function handleFileSelect(file) {
   const textEl = dropZone.querySelector(".drop-zone-text");
   if (file) {
-    textEl.innerHTML = `Selected: <strong>${file.name}</strong> (${(file.size / 1024).toFixed(1)} KB)`;
+    textEl.textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
   } else {
     textEl.innerHTML = `Drag & drop your CSV here or <strong>browse</strong>`;
   }
@@ -239,11 +251,50 @@ togglePasswordBtn.addEventListener("click", () => {
   const eyeClosed = togglePasswordBtn.querySelector(".eye-closed");
   
   if (isPassword) {
-    eyeOpen.style.display = "none";
-    eyeClosed.style.display = "block";
+    eyeOpen.hidden = true;
+    eyeClosed.hidden = false;
   } else {
-    eyeOpen.style.display = "block";
-    eyeClosed.style.display = "none";
+    eyeOpen.hidden = false;
+    eyeClosed.hidden = true;
+  }
+  togglePasswordBtn.setAttribute("aria-label", isPassword ? "Hide API key" : "Show API key");
+  togglePasswordBtn.setAttribute("aria-pressed", String(isPassword));
+});
+
+function openPromptModal() {
+  promptText.value = SYSTEM_PROMPT;
+  promptModal.hidden = false;
+  promptText.focus();
+}
+
+function closePromptModal() {
+  promptModal.hidden = true;
+  viewPromptBtn.focus();
+}
+
+viewPromptBtn.addEventListener("click", openPromptModal);
+
+closePromptBtn.addEventListener("click", closePromptModal);
+
+savePromptBtn.addEventListener("click", () => {
+  SYSTEM_PROMPT = promptText.value.trim() || DEFAULT_SYSTEM_PROMPT;
+  closePromptModal();
+  setStatus("Prompt saved for this session.");
+});
+
+resetPromptBtn.addEventListener("click", () => {
+  promptText.value = DEFAULT_SYSTEM_PROMPT;
+});
+
+promptModal.addEventListener("click", (event) => {
+  if (event.target === promptModal) {
+    closePromptModal();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !promptModal.hidden) {
+    closePromptModal();
   }
 });
 
