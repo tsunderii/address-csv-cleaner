@@ -1,302 +1,240 @@
-// script.js – USPS Address CSV Formatter logic
+// script.js - InDesign CSV Cleaner prompt workflow
 
-// --- Configuration -------------------------------------------------------
-// Google AI Studio (Gemini‑2.5‑Flash) endpoint
-const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+const OUTPUT_COLUMNS = [
+  "Envelope Names",
+  "Address",
+  "apt",
+  "City",
+  "State",
+  "Zipcode",
+  "Country"
+];
 
-const DEFAULT_SYSTEM_PROMPT = `You are an expert postal address cleaning and formatting assistant. Your task is to clean and standardize US mailing addresses to USPS standards.
+const CLEANING_PROMPT = `You are cleaning a customer guest/address list for an InDesign CSV import.
 
-Input: A single raw address string containing elements of name, street, city, state, zip.
+Return only a valid JSON object. Do not include markdown, explanations, or extra fields.
 
-Output: A JSON object with the following fields:
-- "full_name": Extract and format the recipient's name in Title Case if present (e.g., "John Doe"). If no recipient name is found, output an empty string.
-- "delivery_address": Clean and standardize the street address. Follow USPS Publication 28 guidelines:
-  * Output all letters in UPPERCASE.
-  * Remove all punctuation (no periods after abbreviations, no commas, e.g., "N" instead of "N.", "ST" instead of "St.").
-  * Standardize suffixes (e.g., "ST", "AVE", "RD", "DR", "LN", "BLVD").
-  * Standardize secondary address units (e.g., "APT 4B", "STE 200", "FL 3", "UNIT A"). Use standard USPS abbreviations.
-  * Standardize directional indicators (e.g., "N", "S", "E", "W", "NE", "NW", "SE", "SW").
-- "city_state_zip": Standardize city, state, and ZIP code:
-  * Format: "[CITY] [STATE] [ZIP]" (e.g., "SAN FRANCISCO CA 94103").
-  * City must be in UPPERCASE.
-  * State must be the 2-letter postal abbreviation (e.g., "CA", "NY").
-  * ZIP code must be a 5-digit number or 9-digit ZIP+4 formatted as "12345-6789".
-- "notes": Add a concise comment if any issues were resolved or if key info is missing. If the address is perfect, output "Cleaned".
+The object must have one property named "rows". "rows" must be an array.
 
-Guidelines for address parts:
-- Do not output markdown or extra fields. Match the schema exactly.`;
+Use exactly these fields for every row object:
+- "Envelope Names"
+- "Address"
+- "apt"
+- "City"
+- "State"
+- "Zipcode"
+- "Country"
 
-let SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT;
+Formatting rules:
+- Use normal human capitalization, not all caps.
+- Preserve titles and family wording when present, such as "Mr. and Mrs.", "Dr.", "Ms.", "& Family", and "and Guest".
+- Correct title typos. For example, change "Mr.s" or "MRS" to "Mrs.".
+- Street addresses should look natural, such as "2816 61st Avenue SE", "145 Sailors Landing Ct", or "11018 Old St. Augustine Rd".
+- Check that the street, city, state, and ZIP/postal code combination appears plausible and real. Correct obvious misspellings only when you are confident. Do not invent a new address when uncertain; preserve the customer's address text as closely as possible.
+- Put apartment, suite, unit, floor, or similar secondary info in "apt". Keep it readable, such as "Apartment 32" or "Suite 102-335".
+- Put city only in "City", with normal capitalization, such as "San Francisco" or "St. Augustine".
+- Put state/province only in "State". Always convert US state names to the 2-letter postal abbreviation, such as "Florida" to "FL" or "California" to "CA". Keep Canadian provinces readable if present.
+- Put postal code only in "Zipcode".
+- Put country in "Country" only when it is outside the United States or explicitly provided.
+- Leave a field as an empty string when the information is missing.
+- Fix obvious spacing, punctuation, and capitalization issues.
+- Keep every input row in the same order.
 
-// --- UI Elements ----------------------------------------------------------
-const apiKeyInput = document.getElementById("apiKey");
-const fileInput = document.getElementById("csvFile");
-const processBtn = document.getElementById("processBtn");
+Clean the customer address list I paste below.`;
+
+let latestCsvContent = "";
+let latestRows = [];
+
 const statusDiv = document.getElementById("status");
-const progressBar = document.getElementById("progressBar");
-const progressText = document.getElementById("progressText");
-const progressWrapper = document.querySelector(".progress-wrapper");
 const downloadLink = document.getElementById("downloadLink");
-const dropZone = document.getElementById("dropZone");
-const togglePasswordBtn = document.getElementById("togglePasswordBtn");
-const viewPromptBtn = document.getElementById("viewPromptBtn");
-const promptModal = document.getElementById("promptModal");
-const promptText = document.getElementById("promptText");
-const closePromptBtn = document.getElementById("closePromptBtn");
-const savePromptBtn = document.getElementById("savePromptBtn");
-const resetPromptBtn = document.getElementById("resetPromptBtn");
+const downloadBtn = document.getElementById("downloadBtn");
+const outputPanel = document.getElementById("outputPanel");
+const outputSummary = document.getElementById("outputSummary");
+const outputBody = document.getElementById("outputBody");
+const generatedPrompt = document.getElementById("generatedPrompt");
+const copyGeneratedPromptBtn = document.getElementById("copyGeneratedPromptBtn");
+const pastedJsonInput = document.getElementById("pastedJsonInput");
+const previewPastedBtn = document.getElementById("previewPastedBtn");
+const toast = document.getElementById("toast");
 
-// --- Helper Functions ------------------------------------------------------
+generatedPrompt.value = CLEANING_PROMPT;
+
 function setStatus(message) {
   statusDiv.textContent = message;
 }
 
-function updateProgress(current, total) {
-  const percent = Math.round((current / total) * 100);
-  progressBar.value = percent;
-  progressText.textContent = `${percent}% (${current}/${total})`;
+function showToast(message) {
+  toast.textContent = message;
+  toast.hidden = false;
+  window.clearTimeout(showToast.timer);
+  showToast.timer = window.setTimeout(() => {
+    toast.hidden = true;
+  }, 3500);
 }
 
-async function callGemini(rowData) {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) throw new Error("API key missing");
+function csvEscape(value) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
 
-  const payload = {
-    contents: [
-      { parts: [{ text: rowData }] }
-    ],
-    systemInstruction: {
-      parts: [{ text: SYSTEM_PROMPT }]
-    },
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: "OBJECT",
-        properties: {
-          full_name: { type: "STRING" },
-          delivery_address: { type: "STRING" },
-          city_state_zip: { type: "STRING" },
-          notes: { type: "STRING" }
-        },
-        required: ["full_name", "delivery_address", "city_state_zip", "notes"]
-      }
-    }
-  };
-
-  const url = `${GEMINI_ENDPOINT}?key=${encodeURIComponent(apiKey)}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+function normalizeOutputRow(row) {
+  const normalized = {};
+  OUTPUT_COLUMNS.forEach(column => {
+    const value = column === "Address" ? row?.Address ?? row?.Adress : row?.[column];
+    normalized[column] = String(value ?? "").trim();
   });
+  return normalized;
+}
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Gemini API error ${response.status}: ${errText}`);
+function parseCleanedRows(text) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error("Paste the JSON output from ChatGPT first.");
   }
 
-  const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Empty response from Gemini");
-  return text.trim();
+  const withoutFence = trimmed
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  try {
+    const parsed = JSON.parse(withoutFence);
+    if (Array.isArray(parsed)) return parsed;
+    if (Array.isArray(parsed.rows)) return parsed.rows;
+  } catch (err) {
+    const startObject = withoutFence.indexOf("{");
+    const endObject = withoutFence.lastIndexOf("}");
+    if (startObject !== -1 && endObject !== -1 && endObject > startObject) {
+      const parsed = JSON.parse(withoutFence.slice(startObject, endObject + 1));
+      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed.rows)) return parsed.rows;
+    }
+
+    const startArray = withoutFence.indexOf("[");
+    const endArray = withoutFence.lastIndexOf("]");
+    if (startArray !== -1 && endArray !== -1 && endArray > startArray) {
+      const parsed = JSON.parse(withoutFence.slice(startArray, endArray + 1));
+      if (Array.isArray(parsed)) return parsed;
+    }
+  }
+
+  throw new Error('That does not look like JSON. It should start with {"rows":[...]} or [...].');
 }
 
 function buildCSV(rows) {
-  const header = "FULL_NAME,DELIVERY_ADDRESS,CITY_STATE_ZIP,NOTES";
-  const lines = rows.map(r => {
-    const cols = [
-      r.full_name || "",
-      r.delivery_address || "",
-      r.city_state_zip || "",
-      r.notes || ""
-    ];
-    // Escape double quotes and wrap each column in quotes
-    const escaped = cols.map(c => `"${String(c).replace(/"/g, '""')}"`);
-    return escaped.join(",");
-  });
-  return [header, ...lines].join("\n");
+  const header = OUTPUT_COLUMNS.map(csvEscape).join(",");
+  const lines = rows.map(row => OUTPUT_COLUMNS.map(column => csvEscape(row[column])).join(","));
+  return `\uFEFF${[header, ...lines].join("\r\n")}`;
 }
 
-// --- Main Processing -------------------------------------------------------
-processBtn.addEventListener("click", async () => {
-  // Reset UI
+function resetOutput() {
+  latestCsvContent = "";
+  latestRows = [];
+  downloadLink.removeAttribute("href");
   downloadLink.hidden = true;
-  progressWrapper.hidden = true;
-  setStatus("");
+  downloadBtn.disabled = true;
+  outputPanel.hidden = true;
+  outputBody.replaceChildren();
+  outputSummary.textContent = "";
+}
 
-  const file = fileInput.files[0];
-  if (!file) {
-    setStatus("Please select a CSV file.");
+function makeCell(value) {
+  const cell = document.createElement("td");
+  cell.textContent = value || "";
+  return cell;
+}
+
+function renderOutputPreview(rows) {
+  outputBody.replaceChildren();
+  rows.forEach(row => {
+    const tableRow = document.createElement("tr");
+    tableRow.append(
+      makeCell(row["Envelope Names"]),
+      makeCell(row.Address),
+      makeCell(row.apt),
+      makeCell(row.City),
+      makeCell(row.State),
+      makeCell(row.Zipcode),
+      makeCell(row.Country)
+    );
+    outputBody.appendChild(tableRow);
+  });
+
+  outputSummary.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"} ready for InDesign.`;
+  outputPanel.hidden = false;
+  downloadBtn.disabled = false;
+}
+
+async function saveCsv() {
+  if (!latestCsvContent) {
+    setStatus("Preview the cleaned output before saving.");
     return;
   }
-  if (!apiKeyInput.value.trim()) {
-    setStatus("Please enter your Google AI Studio API key.");
-    return;
-  }
-  if (!window.Papa) {
-    setStatus("CSV parser failed to load. Please check your connection and refresh.");
-    return;
-  }
 
-  setStatus("Parsing CSV…");
-  const rows = [];
-  let totalRows = 0;
+  const suggestedName = "indesign_addresses.csv";
+  const blob = new Blob([latestCsvContent], { type: "text/csv;charset=utf-8" });
 
-  // PapaParse streaming to avoid loading huge files into memory
-  Papa.parse(file, {
-    header: false,
-    skipEmptyLines: true,
-    chunk: async function (results) {
-      for (const row of results.data) {
-        const rowString = row.join(", ");
-        rows.push({ original: rowString, processed: null });
-      }
-    },
-    complete: async function () {
-      totalRows = rows.length;
-      if (totalRows === 0) {
-        setStatus("CSV appears empty.");
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [
+          {
+            description: "CSV file",
+            accept: { "text/csv": [".csv"] }
+          }
+        ]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      setStatus("Saved. The CSV is ready for InDesign.");
+      showToast("Saved CSV successfully.");
+      return;
+    } catch (err) {
+      if (err.name === "AbortError") {
+        setStatus("Save canceled.");
         return;
       }
-      setStatus(`Processing ${totalRows} rows…`);
-      progressWrapper.hidden = false;
-      updateProgress(0, totalRows);
-
-      const processedRows = [];
-      for (let i = 0; i < rows.length; i++) {
-        const { original } = rows[i];
-        try {
-          const jsonText = await callGemini(original);
-          const parsed = JSON.parse(jsonText);
-          processedRows.push(parsed);
-        } catch (e) {
-          console.error("Gemini error for row", i, e);
-          processedRows.push({
-            full_name: "",
-            delivery_address: original,
-            city_state_zip: "",
-            notes: `ERROR: ${e.message}`
-          });
-        }
-        updateProgress(i + 1, totalRows);
-      }
-
-      const csvContent = buildCSV(processedRows);
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      downloadLink.href = url;
-      downloadLink.download = "cleaned_addresses.csv";
-      downloadLink.hidden = false;
-      setStatus("Processing complete. Click the link to download.");
-    },
-    error: function (err) {
-      console.error("PapaParse error", err);
-      setStatus("Failed to read CSV file.");
+      console.error("Save picker failed", err);
     }
-  });
-});
-
-// --- Modern UI Interaction & Drag-and-Drop ---------------------------------
-function handleFileSelect(file) {
-  const textEl = dropZone.querySelector(".drop-zone-text");
-  if (file) {
-    textEl.textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-  } else {
-    textEl.innerHTML = `Drag & drop your CSV here or <strong>browse</strong>`;
   }
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = suggestedName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setStatus("Saved. If your browser asked where to put it, choose the folder and filename there.");
+  showToast("CSV download started.");
 }
 
-fileInput.addEventListener("change", () => {
-  if (fileInput.files.length > 0) {
-    handleFileSelect(fileInput.files[0]);
-  } else {
-    handleFileSelect(null);
+copyGeneratedPromptBtn.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(generatedPrompt.value);
+    setStatus("Prompt copied. Paste it into ChatGPT with the customer address list.");
+    showToast("Prompt copied.");
+  } catch (err) {
+    generatedPrompt.focus();
+    generatedPrompt.select();
+    setStatus("Prompt selected. Copy it from the text box.");
   }
 });
 
-// Drag & drop highlight classes
-["dragenter", "dragover"].forEach(eventName => {
-  dropZone.addEventListener(eventName, (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropZone.classList.add("drag-over");
-  }, false);
-});
+downloadBtn.addEventListener("click", saveCsv);
 
-["dragleave", "drop"].forEach(eventName => {
-  dropZone.addEventListener(eventName, (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropZone.classList.remove("drag-over");
-  }, false);
-});
-
-// Drop handler
-dropZone.addEventListener("drop", (e) => {
-  const dt = e.dataTransfer;
-  const files = dt.files;
-  if (files.length > 0) {
-    fileInput.files = files;
-    handleFileSelect(files[0]);
-  }
-}, false);
-
-// Password visibility toggle
-togglePasswordBtn.addEventListener("click", () => {
-  const isPassword = apiKeyInput.type === "password";
-  apiKeyInput.type = isPassword ? "text" : "password";
-  
-  const eyeOpen = togglePasswordBtn.querySelector(".eye-open");
-  const eyeClosed = togglePasswordBtn.querySelector(".eye-closed");
-  
-  if (isPassword) {
-    eyeOpen.hidden = true;
-    eyeClosed.hidden = false;
-  } else {
-    eyeOpen.hidden = false;
-    eyeClosed.hidden = true;
-  }
-  togglePasswordBtn.setAttribute("aria-label", isPassword ? "Hide API key" : "Show API key");
-  togglePasswordBtn.setAttribute("aria-pressed", String(isPassword));
-});
-
-function openPromptModal() {
-  promptText.value = SYSTEM_PROMPT;
-  promptModal.hidden = false;
-  promptText.focus();
-}
-
-function closePromptModal() {
-  promptModal.hidden = true;
-  viewPromptBtn.focus();
-}
-
-viewPromptBtn.addEventListener("click", openPromptModal);
-
-closePromptBtn.addEventListener("click", closePromptModal);
-
-savePromptBtn.addEventListener("click", () => {
-  SYSTEM_PROMPT = promptText.value.trim() || DEFAULT_SYSTEM_PROMPT;
-  closePromptModal();
-  setStatus("Prompt saved for this session.");
-});
-
-resetPromptBtn.addEventListener("click", () => {
-  promptText.value = DEFAULT_SYSTEM_PROMPT;
-});
-
-promptModal.addEventListener("click", (event) => {
-  if (event.target === promptModal) {
-    closePromptModal();
+previewPastedBtn.addEventListener("click", () => {
+  try {
+    resetOutput();
+    const rows = parseCleanedRows(pastedJsonInput.value).map(normalizeOutputRow);
+    latestRows = rows;
+    latestCsvContent = buildCSV(latestRows);
+    renderOutputPreview(latestRows);
+    setStatus("Pasted output ready. Review it, then save the InDesign CSV.");
+  } catch (err) {
+    console.error("Pasted output error", err);
+    setStatus(err.message || "Could not read the pasted output.");
   }
 });
-
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !promptModal.hidden) {
-    closePromptModal();
-  }
-});
-
-// --------------------------------------------------------------------------
-// End of script.js

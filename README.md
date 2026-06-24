@@ -1,12 +1,17 @@
-# USPS Address CSV Formatter
+# InDesign CSV Cleaner Prompt
 
-A premium dark-mode glassmorphism web application that cleans and standardizes mailing addresses to USPS Publication 28 standards using Gemini 2.5 Flash and JSON structured outputs.
+A premium dark-mode web application that provides a copy-ready ChatGPT cleaning prompt, previews pasted ChatGPT JSON output, and exports an InDesign-ready CSV.
 
 ## Features
 - **Modern UI**: Fully responsive, dark-mode glassmorphism design.
-- **USPS Standard Formatting**: Clean and format recipient name, street address, city, state, and ZIP code.
-- **Gemini 2.5 Flash Integration**: Uses root-level system instructions and structured JSON response schemas for perfect data parsing.
-- **Safe CSV Handling**: Streams input files via PapaParse and packages results securely with double-quote escaping.
+- **Prompt First**: Shows the ChatGPT cleaning prompt directly on the page for easy copy/paste.
+- **InDesign CSV Output**: Exports `Envelope Names`, `Address`, `apt`, `City`, `State`, `Zipcode`, and `Country` columns as a UTF-8 CSV with CRLF line endings.
+- **Output Review**: Shows the cleaned rows in a preview table before downloading.
+- **Normal Capitalization**: Keeps names and addresses readable for invitations instead of forcing all caps.
+- **ChatGPT Handoff**: Accepts ChatGPT's JSON result back in the app.
+- **Save Picker**: Uses the browser's save dialog when available so the CSV can be renamed and saved to a chosen folder.
+- **Safe CSV Handling**: Packages results with double-quote escaping for CSV compatibility.
+- **Static Friendly**: Runs as static files with no API key or backend required.
 
 ## Getting Started
 
@@ -16,5 +21,6 @@ A premium dark-mode glassmorphism web application that cleans and standardizes m
    python3 -m http.server 8000
    ```
 3. Open `http://localhost:8000` in your web browser.
-4. Input your Google AI Studio API Key, select your uncleaned CSV file, and click **Process CSV**.
-5. Download the formatted CSV once processing is complete.
+4. Copy the prompt into ChatGPT with the customer's address list.
+5. Paste ChatGPT's JSON output back into the app.
+6. Review the cleaned rows, then save the formatted CSV for InDesign.

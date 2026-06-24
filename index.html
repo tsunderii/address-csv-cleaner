@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Address CSV Cleaner</title>
+  <title>InDesign CSV Cleaner Prompt</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=prompt-only" />
 </head>
 <body>
   <main class="container glass">
-    <h1>Address CSV Cleaner</h1>
-    <p>Clean and format raw US addresses to USPS standards using Gemini.</p>
+    <h1>InDesign CSV Cleaner Prompt</h1>
+    <p>Copy the prompt into ChatGPT, then paste ChatGPT's JSON output here to review and save a CSV.</p>
 
     <section class="instructions" aria-labelledby="instructionsTitle">
       <div class="instructions-header">
@@ -20,76 +20,66 @@
         <button type="button" id="viewPromptBtn" class="secondary-btn">View Prompt</button>
       </div>
       <ol>
-        <li>Enter your Google AI Studio API key.</li>
-        <li>Select or drag and drop your CSV file containing raw addresses.</li>
-        <li>Click <strong>Process CSV</strong> to clean the data.</li>
-        <li>Download the cleaned CSV using the link that appears.</li>
+        <li>Copy the prompt below into ChatGPT with the customer address list.</li>
+        <li>Paste ChatGPT's JSON output back into this app.</li>
+        <li>Review the cleaned output, then save the CSV for InDesign.</li>
       </ol>
     </section>
 
-    <div class="field">
-      <div class="label-row">
-        <label for="apiKey">Google AI Studio API Key</label>
-        <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" class="helper-link">Get API Key</a>
-      </div>
-      <div class="input-wrapper">
-        <input type="password" id="apiKey" placeholder="Enter your Gemini API key" autocomplete="off" />
-        <button type="button" id="togglePasswordBtn" class="toggle-btn" aria-label="Show API key" aria-pressed="false">
-          <svg class="eye-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <g class="eye-open">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-              <circle cx="12" cy="12" r="3"></circle>
-            </g>
-            <g class="eye-closed" hidden>
-              <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C5 20 1 12 1 12a20.24 20.24 0 0 1 5.06-5.94"></path>
-              <path d="M9.9 4.24A10.45 10.45 0 0 1 12 4c7 0 11 8 11 8a20.79 20.79 0 0 1-2.16 3.19"></path>
-              <path d="M14.12 14.12A3 3 0 0 1 9.88 9.88"></path>
-              <path d="M1 1l22 22"></path>
-            </g>
-          </svg>
-        </button>
-      </div>
-    </div>
-
-    <div class="field">
-      <label for="csvFile">CSV file</label>
-      <label id="dropZone" class="drop-zone" for="csvFile">
-        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <path d="M17 8l-5-5-5 5"></path>
-          <path d="M12 3v12"></path>
-        </svg>
-        <span class="drop-zone-text">Drag and drop your CSV here or <strong>browse</strong></span>
-      </label>
-      <input type="file" id="csvFile" accept=".csv,text/csv" />
-    </div>
-
-    <button type="button" id="processBtn" class="primary-btn">Process CSV</button>
     <div id="status" class="status" role="status" aria-live="polite"></div>
 
-    <div class="progress-wrapper" hidden>
-      <progress id="progressBar" value="0" max="100"></progress>
-      <span id="progressText">0% (0/0)</span>
-    </div>
+    <section id="promptPanel" class="prompt-panel" aria-labelledby="promptTitle">
+      <div class="output-header">
+        <div>
+          <h2 id="promptTitle">ChatGPT Prompt</h2>
+          <p id="promptSummary" class="output-summary">Paste this into ChatGPT, then add the customer's address list underneath it.</p>
+        </div>
+        <button type="button" id="copyGeneratedPromptBtn" class="secondary-btn">Copy Prompt</button>
+      </div>
+      <textarea id="generatedPrompt" spellcheck="false" readonly></textarea>
+    </section>
 
-    <a id="downloadLink" href="#" download="cleaned_addresses.csv" hidden>Download Cleaned CSV</a>
+    <section id="pastePanel" class="paste-panel" aria-labelledby="pasteTitle">
+      <div class="output-header">
+        <div>
+          <h2 id="pasteTitle">Paste ChatGPT Output</h2>
+          <p class="output-summary">Paste the JSON here to preview it and save the CSV.</p>
+        </div>
+        <button type="button" id="previewPastedBtn" class="secondary-btn">Preview Pasted Output</button>
+      </div>
+      <textarea id="pastedJsonInput" spellcheck="false" placeholder='{"rows":[{"Envelope Names":"Diana, Landon, and Mike","Address":"4129 Muncy Road","apt":"","City":"Jacksonville","State":"FL","Zipcode":"32257","Country":""}]}'></textarea>
+    </section>
+
+    <section id="outputPanel" class="output-panel" aria-labelledby="outputTitle" hidden>
+      <div class="output-header">
+        <div>
+          <h2 id="outputTitle">Cleaned Output</h2>
+          <p id="outputSummary" class="output-summary"></p>
+        </div>
+        <button type="button" id="downloadBtn" class="secondary-btn">Save CSV</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Envelope Names</th>
+              <th>Address</th>
+              <th>apt</th>
+              <th>City</th>
+              <th>State</th>
+              <th>Zipcode</th>
+              <th>Country</th>
+            </tr>
+          </thead>
+          <tbody id="outputBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <a id="downloadLink" href="#" download="indesign_addresses.csv" hidden>Download InDesign CSV</a>
   </main>
 
-  <div id="promptModal" class="modal" hidden>
-    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="promptModalTitle">
-      <div class="modal-header">
-        <h2 id="promptModalTitle">Gemini Prompt</h2>
-        <button type="button" id="closePromptBtn" class="icon-btn" aria-label="Close prompt editor">&times;</button>
-      </div>
-      <textarea id="promptText" spellcheck="false"></textarea>
-      <div class="modal-actions">
-        <button type="button" id="resetPromptBtn" class="secondary-btn">Reset</button>
-        <button type="button" id="savePromptBtn" class="primary-btn">Save Prompt</button>
-      </div>
-    </div>
-  </div>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <script src="script.js"></script>
 </body>
 </html>
