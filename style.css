@@ -260,6 +260,28 @@ a#downloadLink {
   background: rgba(8, 10, 22, 0.45);
 }
 
+.paste-feedback {
+  min-height: 1.25rem;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.86rem;
+}
+
+.paste-feedback:empty {
+  display: none;
+}
+
+.paste-feedback.success {
+  color: #9ff2c4;
+  background: rgba(46, 204, 113, 0.09);
+}
+
+.paste-feedback.error {
+  color: #ffb8b8;
+  background: rgba(255, 92, 92, 0.1);
+}
+
 .output-header {
   display: flex;
   align-items: center;

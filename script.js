@@ -40,13 +40,18 @@ Formatting rules:
 - Fix obvious spacing, punctuation, and capitalization issues.
 - Keep every input row in the same order.
 
+If the complete result is too long for one response:
+- Split it into numbered batches of no more than 40 rows.
+- Make every batch a complete, independent JSON object in the same {"rows":[...]} format.
+- Do not repeat or skip rows between batches.
+- The user will paste all batch objects into the app one after another, so do not try to connect the JSON objects.
+
 Clean the customer address list I paste below.`;
 
 let latestCsvContent = "";
 let latestRows = [];
 
 const statusDiv = document.getElementById("status");
-const downloadLink = document.getElementById("downloadLink");
 const downloadBtn = document.getElementById("downloadBtn");
 const outputPanel = document.getElementById("outputPanel");
 const outputSummary = document.getElementById("outputSummary");
@@ -55,6 +60,7 @@ const generatedPrompt = document.getElementById("generatedPrompt");
 const copyGeneratedPromptBtn = document.getElementById("copyGeneratedPromptBtn");
 const pastedJsonInput = document.getElementById("pastedJsonInput");
 const previewPastedBtn = document.getElementById("previewPastedBtn");
+const pasteFeedback = document.getElementById("pasteFeedback");
 const toast = document.getElementById("toast");
 
 generatedPrompt.value = CLEANING_PROMPT;
@@ -76,48 +82,162 @@ function csvEscape(value) {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
 
+function normalizedKey(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+const COLUMN_ALIASES = {
+  "Envelope Names": ["envelopenames", "envelopename", "name", "names", "guestnames", "guestname"],
+  "Address": ["address", "adress", "streetaddress", "street"],
+  "apt": ["apt", "apartment", "unit", "suite", "address2", "secondaryaddress"],
+  "City": ["city", "town"],
+  "State": ["state", "province", "stateprovince"],
+  "Zipcode": ["zipcode", "zip", "postalcode", "postcode"],
+  "Country": ["country"]
+};
+
 function normalizeOutputRow(row) {
+  if (!row || typeof row !== "object" || Array.isArray(row)) {
+    throw new Error("Every row must be a JSON object with address fields.");
+  }
+
+  const valuesByKey = new Map(
+    Object.entries(row).map(([key, value]) => [normalizedKey(key), value])
+  );
   const normalized = {};
+
   OUTPUT_COLUMNS.forEach(column => {
-    const value = column === "Address" ? row?.Address ?? row?.Adress : row?.[column];
+    const alias = COLUMN_ALIASES[column].find(key => valuesByKey.has(key));
+    const value = alias ? valuesByKey.get(alias) : "";
     normalized[column] = String(value ?? "").trim();
   });
+
+  if (!OUTPUT_COLUMNS.some(column => normalized[column])) {
+    throw new Error("A pasted row had no recognized address fields. Check the ChatGPT output and try again.");
+  }
+  if (!normalized["Envelope Names"] && !normalized.Address) {
+    throw new Error("A pasted row has neither an envelope name nor a street address. Check the ChatGPT output and try again.");
+  }
+
   return normalized;
 }
 
-function parseCleanedRows(text) {
+function extractJsonDocuments(text) {
+  const source = text
+    .replace(/```json/gi, "")
+    .replace(/```/g, "");
+  const documents = [];
+  const stack = [];
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+
+    if (stack.length === 0) {
+      if (char === "{" || char === "[") {
+        start = index;
+        stack.push(char);
+      }
+      continue;
+    }
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{" || char === "[") {
+      stack.push(char);
+      continue;
+    }
+
+    if (char === "}" || char === "]") {
+      const expected = char === "}" ? "{" : "[";
+      if (stack.pop() !== expected) {
+        const candidate = source.slice(start, index + 1);
+        if (/"rows"\s*:/i.test(candidate)) {
+          throw new Error("One JSON chunk has mismatched brackets. Copy that complete chunk from ChatGPT again.");
+        }
+        stack.length = 0;
+        start = -1;
+        inString = false;
+        escaped = false;
+        continue;
+      }
+      if (stack.length === 0 && start !== -1) {
+        documents.push(source.slice(start, index + 1));
+        start = -1;
+      }
+    }
+  }
+
+  if (stack.length > 0 || inString) {
+    const candidate = start === -1 ? "" : source.slice(start);
+    if (/"rows"\s*:/i.test(candidate)) {
+      throw new Error("The last JSON chunk is incomplete. Paste the rest of that ChatGPT response and try again.");
+    }
+  }
+
+  return documents;
+}
+
+function parseCleanedOutput(text) {
   const trimmed = text.trim();
   if (!trimmed) {
     throw new Error("Paste the JSON output from ChatGPT first.");
   }
 
-  const withoutFence = trimmed
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-
-  try {
-    const parsed = JSON.parse(withoutFence);
-    if (Array.isArray(parsed)) return parsed;
-    if (Array.isArray(parsed.rows)) return parsed.rows;
-  } catch (err) {
-    const startObject = withoutFence.indexOf("{");
-    const endObject = withoutFence.lastIndexOf("}");
-    if (startObject !== -1 && endObject !== -1 && endObject > startObject) {
-      const parsed = JSON.parse(withoutFence.slice(startObject, endObject + 1));
-      if (Array.isArray(parsed)) return parsed;
-      if (Array.isArray(parsed.rows)) return parsed.rows;
-    }
-
-    const startArray = withoutFence.indexOf("[");
-    const endArray = withoutFence.lastIndexOf("]");
-    if (startArray !== -1 && endArray !== -1 && endArray > startArray) {
-      const parsed = JSON.parse(withoutFence.slice(startArray, endArray + 1));
-      if (Array.isArray(parsed)) return parsed;
-    }
+  const documents = extractJsonDocuments(trimmed);
+  if (documents.length === 0) {
+    throw new Error('No complete JSON was found. It should contain {"rows":[...]} or [...].');
   }
 
-  throw new Error('That does not look like JSON. It should start with {"rows":[...]} or [...].');
+  const rows = [];
+  let chunkCount = 0;
+  documents.forEach((document, index) => {
+    let parsed;
+    try {
+      parsed = JSON.parse(document);
+    } catch (err) {
+      if (/"rows"\s*:/i.test(document)) {
+        throw new Error(`JSON chunk ${index + 1} is not valid. Copy that complete chunk from ChatGPT again.`);
+      }
+      return;
+    }
+
+    if (Array.isArray(parsed) && parsed.every(row => row && typeof row === "object" && !Array.isArray(row))) {
+      rows.push(...parsed);
+      chunkCount += 1;
+      return;
+    }
+    if (parsed && Array.isArray(parsed.rows)) {
+      rows.push(...parsed.rows);
+      chunkCount += 1;
+      return;
+    }
+  });
+
+  if (chunkCount === 0) {
+    throw new Error('No complete address JSON was found. It should contain {"rows":[...]} or an array of row objects.');
+  }
+  if (rows.length === 0) {
+    throw new Error('The JSON contains zero rows. Ask ChatGPT to return the cleaned addresses inside "rows".');
+  }
+
+  return { rows, chunkCount };
 }
 
 function buildCSV(rows) {
@@ -129,12 +249,15 @@ function buildCSV(rows) {
 function resetOutput() {
   latestCsvContent = "";
   latestRows = [];
-  downloadLink.removeAttribute("href");
-  downloadLink.hidden = true;
   downloadBtn.disabled = true;
   outputPanel.hidden = true;
   outputBody.replaceChildren();
   outputSummary.textContent = "";
+}
+
+function setPasteFeedback(message, type = "") {
+  pasteFeedback.textContent = message;
+  pasteFeedback.className = `paste-feedback${type ? ` ${type}` : ""}`;
 }
 
 function makeCell(value) {
@@ -165,15 +288,17 @@ function renderOutputPreview(rows) {
 }
 
 async function saveCsv() {
-  if (!latestCsvContent) {
+  if (!latestRows.length) {
     setStatus("Preview the cleaned output before saving.");
+    setPasteFeedback("Preview valid address rows before saving.", "error");
     return;
   }
 
+  latestCsvContent = buildCSV(latestRows);
   const suggestedName = "indesign_addresses.csv";
-  const blob = new Blob([latestCsvContent], { type: "text/csv;charset=utf-8" });
 
   if (window.showSaveFilePicker) {
+    let writable;
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName,
@@ -184,8 +309,8 @@ async function saveCsv() {
           }
         ]
       });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
+      writable = await handle.createWritable();
+      await writable.write(latestCsvContent);
       await writable.close();
       setStatus("Saved. The CSV is ready for InDesign.");
       showToast("Saved CSV successfully.");
@@ -195,10 +320,15 @@ async function saveCsv() {
         setStatus("Save canceled.");
         return;
       }
+      if (writable && typeof writable.abort === "function") {
+        await writable.abort().catch(() => {});
+      }
       console.error("Save picker failed", err);
+      setStatus("The save dialog failed, so a browser download will be used instead.");
     }
   }
 
+  const blob = new Blob([latestCsvContent], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -228,13 +358,21 @@ downloadBtn.addEventListener("click", saveCsv);
 previewPastedBtn.addEventListener("click", () => {
   try {
     resetOutput();
-    const rows = parseCleanedRows(pastedJsonInput.value).map(normalizeOutputRow);
+    setPasteFeedback("");
+    const parsed = parseCleanedOutput(pastedJsonInput.value);
+    const rows = parsed.rows.map(normalizeOutputRow);
     latestRows = rows;
     latestCsvContent = buildCSV(latestRows);
     renderOutputPreview(latestRows);
-    setStatus("Pasted output ready. Review it, then save the InDesign CSV.");
+    const chunkLabel = parsed.chunkCount === 1 ? "1 JSON chunk" : `${parsed.chunkCount} JSON chunks`;
+    const message = `${rows.length} rows combined from ${chunkLabel}. Review them, then save the CSV.`;
+    setPasteFeedback(message, "success");
+    setStatus(message);
   } catch (err) {
     console.error("Pasted output error", err);
-    setStatus(err.message || "Could not read the pasted output.");
+    const message = err.message || "Could not read the pasted output.";
+    setPasteFeedback(message, "error");
+    setStatus(message);
+    showToast("Could not preview the pasted output.");
   }
 });

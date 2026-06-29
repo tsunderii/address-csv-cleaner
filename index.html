@@ -20,7 +20,7 @@
       </div>
       <ol>
         <li>Copy the prompt below into ChatGPT with the customer address list.</li>
-        <li>Paste ChatGPT's JSON output back into this app.</li>
+        <li>Paste ChatGPT's JSON output back into this app. Multiple JSON chunks are OK.</li>
         <li>Review the cleaned output, then save the CSV for InDesign.</li>
       </ol>
     </section>
@@ -42,11 +42,12 @@
       <div class="output-header">
         <div>
           <h2 id="pasteTitle">Paste ChatGPT Output</h2>
-          <p class="output-summary">Paste the JSON here to preview it and save the CSV.</p>
+          <p class="output-summary">Paste one or more complete JSON chunks here. The app combines them in order.</p>
         </div>
         <button type="button" id="previewPastedBtn" class="secondary-btn">Preview Pasted Output</button>
       </div>
       <textarea id="pastedJsonInput" spellcheck="false" placeholder='{"rows":[{"Envelope Names":"Diana, Landon, and Mike","Address":"4129 Muncy Road","apt":"","City":"Jacksonville","State":"FL","Zipcode":"32257","Country":""}]}'></textarea>
+      <p id="pasteFeedback" class="paste-feedback" role="status" aria-live="polite"></p>
     </section>
 
     <section id="outputPanel" class="output-panel" aria-labelledby="outputTitle" hidden>
@@ -75,7 +76,6 @@
       </div>
     </section>
 
-    <a id="downloadLink" href="#" download="indesign_addresses.csv" hidden>Download InDesign CSV</a>
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
