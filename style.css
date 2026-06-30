@@ -33,7 +33,7 @@ body {
     linear-gradient(135deg, #171827, var(--bg));
   color: var(--text);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 2rem 1rem;
 }

@@ -39,6 +39,8 @@ Formatting rules:
 - Leave a field as an empty string when the information is missing.
 - Fix obvious spacing, punctuation, and capitalization issues.
 - Keep every input row in the same order.
+- Ignore completely blank rows, hidden formatting-only rows, and unused Excel rows after the last guest or address.
+- Do not create output rows just because cells are formatted or included in Excel's used range.
 
 If the complete result is too long for one response:
 - Split it into numbered batches of no more than 40 rows.

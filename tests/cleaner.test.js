@@ -134,6 +134,15 @@ test("combines fenced 40 + 40 + 2 row chunks in order", () => {
   assert.equal(result.rows[81]["Envelope Names"], "Guest 82");
 });
 
+test("accepts a top-level row array and mixed-case JSON fence", () => {
+  const app = loadApp();
+  app.context.input = `\`\`\`JSON\n${JSON.stringify([row(1), row(2)])}\n\`\`\``;
+  const result = app.evaluate("parseCleanedOutput(input)");
+
+  assert.equal(result.rows.length, 2);
+  assert.equal(result.chunkCount, 1);
+});
+
 test("reports an incomplete final chunk", () => {
   const app = loadApp();
   app.context.input = `${JSON.stringify({ rows: [row(1)] })}\n{"rows":[`;
@@ -151,6 +160,16 @@ test("ignores brackets and unmatched quotes in surrounding prose", () => {
 
   assert.equal(result.rows.length, 1);
   assert.equal(result.chunkCount, 1);
+});
+
+test("keeps braces and brackets inside quoted address values", () => {
+  const app = loadApp();
+  app.context.input = JSON.stringify({
+    rows: [row(1, { Address: '10 Main Street [Rear], Building "A" {East}' })]
+  });
+  const result = app.evaluate("parseCleanedOutput(input)");
+
+  assert.equal(result.rows[0].Address, '10 Main Street [Rear], Building "A" {East}');
 });
 
 test("normalizes common alternate field names", () => {
@@ -178,6 +197,27 @@ test("normalizes common alternate field names", () => {
       Country: ""
     }
   );
+});
+
+test("escapes commas, quotes, and line breaks without losing leading-zero ZIP codes", () => {
+  const app = loadApp();
+  app.context.rowsForCsv = [
+    {
+      "Envelope Names": 'O\'Connor, "Pace" Family',
+      Address: "10 Main Street\nRear Entrance",
+      apt: "",
+      City: "Boston",
+      State: "MA",
+      Zipcode: "02108",
+      Country: ""
+    }
+  ];
+  const csv = app.evaluate("buildCSV(rowsForCsv)");
+
+  assert.ok(csv.startsWith("\uFEFF"));
+  assert.match(csv, /\"O'Connor, \"\"Pace\"\" Family\"/);
+  assert.match(csv, /\"10 Main Street\nRear Entrance\"/);
+  assert.match(csv, /\"02108\"/);
 });
 
 test("rejects zero rows and unrecognized blank rows", () => {
